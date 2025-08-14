@@ -1,0 +1,13 @@
+{
+  "name": "clip_crafter",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "echo 'Starting development server (not implemented)'; exit 0",
+    "lint": "eslint . --ext .ts,.tsx --no-error-on-unmatched-pattern"
+  },
+  "devDependencies": {
+    "@typescript-eslint/parser": "^6.21.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.4.2"
+  }
+}
