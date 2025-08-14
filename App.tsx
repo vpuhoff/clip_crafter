@@ -9,6 +9,9 @@ import { Separator } from './components/ui/separator'
 import { ScrollArea } from './components/ui/scroll-area'
 import { Checkbox } from './components/ui/checkbox'
 import { Slider } from './components/ui/slider'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
+import { Label } from './components/ui/label'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './components/ui/alert-dialog'
 import { toast } from 'sonner'
 import { 
@@ -33,15 +36,30 @@ import {
   CheckCircle2,
   Circle,
   Gauge,
-  TrendingUp
+  TrendingUp,
+  Mic,
+  User,
+  MessageSquare
 } from 'lucide-react'
 import { projectId, publicAnonKey } from './utils/supabase/info'
+
+interface VoiceSettings {
+  voice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
+  gender: 'male' | 'female'
+  narratorDescription: string
+  steerability: string
+}
+
+interface ProjectSettings {
+  voiceSettings: VoiceSettings
+}
 
 interface Scene {
   id: string
   title: string
   text: string
   description: string
+  narratorDescription: string // индивидуальное описание для диктора сцены
   media: MediaFile[]
   audioUrl: string | null
   audioDuration: number | null // duration in seconds
@@ -61,6 +79,7 @@ interface Project {
   id: string
   title: string
   scenes: Scene[]
+  settings: ProjectSettings
   createdAt: string
   updatedAt: string
 }
@@ -78,6 +97,17 @@ export default function App() {
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null)
   const [draggedSceneId, setDraggedSceneId] = useState<string | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  
+  // Project settings state
+  const [projectSettings, setProjectSettings] = useState<ProjectSettings>({
+    voiceSettings: {
+      voice: 'alloy',
+      gender: 'female',
+      narratorDescription: 'Act as a warm female narrator, soft and supportive, slower pace',
+      steerability: 'доброжелательно, спокойно'
+    }
+  })
 
   const apiUrl = `https://${projectId}.supabase.co/functions/v1/make-server-766e6542`
 
@@ -169,6 +199,19 @@ export default function App() {
     return 0.5 + (speed - 1) * (1.5 / 9)
   }
 
+  // Get voice display name
+  const getVoiceDisplayName = (voice: string): string => {
+    const voiceNames = {
+      alloy: 'Alloy (универсальный)',
+      echo: 'Echo (мужской)',
+      fable: 'Fable (британский)',
+      onyx: 'Onyx (глубокий мужской)',
+      nova: 'Nova (женский)',
+      shimmer: 'Shimmer (женский, мягкий)'
+    }
+    return voiceNames[voice as keyof typeof voiceNames] || voice
+  }
+
   const loadProjects = async () => {
     try {
       const response = await fetch(`${apiUrl}/projects`, {
@@ -202,8 +245,12 @@ export default function App() {
 
       const data = await response.json()
       if (data.scenes) {
-        setScenes(data.scenes)
-        setSelectedSceneId(data.scenes[0]?.id || null)
+        const scenesWithNarrator = data.scenes.map((scene: any) => ({
+          ...scene,
+          narratorDescription: '' // Add empty narrator description for each scene
+        }))
+        setScenes(scenesWithNarrator)
+        setSelectedSceneId(scenesWithNarrator[0]?.id || null)
         setCurrentView('editor')
         setCurrentProjectId(`project-${Date.now()}`)
         if (!projectTitle) {
@@ -235,7 +282,8 @@ export default function App() {
         body: JSON.stringify({
           projectId: currentProjectId,
           title: projectTitle,
-          scenes
+          scenes,
+          settings: projectSettings
         })
       })
 
@@ -296,11 +344,16 @@ export default function App() {
         setProjectTitle(project.title)
         setScenes(project.scenes.map((scene: Scene) => ({
           ...scene,
-          // Ensure backward compatibility for projects without isCompleted and speed
+          // Ensure backward compatibility for projects without isCompleted, speed, and narratorDescription
           isCompleted: scene.isCompleted ?? false,
           speed: scene.speed ?? 5, // default video speed is 5 (1x)
-          recommendedSpeed: scene.recommendedSpeed // keep as is, might be undefined
+          recommendedSpeed: scene.recommendedSpeed, // keep as is, might be undefined
+          narratorDescription: scene.narratorDescription ?? '' // Add empty narrator description if missing
         })))
+        // Load project settings if available
+        if (project.settings) {
+          setProjectSettings(project.settings)
+        }
         setSelectedSceneId(project.scenes[0]?.id || null)
         setCurrentProjectId(project.id)
         setCurrentView('editor')
@@ -349,6 +402,12 @@ export default function App() {
     ))
   }
 
+  const updateSceneNarratorDescription = (sceneId: string, newNarratorDescription: string) => {
+    setScenes(prev => prev.map(scene => 
+      scene.id === sceneId ? { ...scene, narratorDescription: newNarratorDescription } : scene
+    ))
+  }
+
   const updateSceneSpeed = (sceneId: string, newSpeed: number) => {
     setScenes(prev => prev.map(scene => 
       scene.id === sceneId ? { ...scene, speed: newSpeed } : scene
@@ -361,12 +420,30 @@ export default function App() {
     ))
   }
 
+  const updateProjectSettings = (newSettings: Partial<ProjectSettings>) => {
+    setProjectSettings(prev => ({
+      ...prev,
+      ...newSettings
+    }))
+  }
+
+  const updateVoiceSettings = (newVoiceSettings: Partial<VoiceSettings>) => {
+    setProjectSettings(prev => ({
+      ...prev,
+      voiceSettings: {
+        ...prev.voiceSettings,
+        ...newVoiceSettings
+      }
+    }))
+  }
+
   const addNewScene = () => {
     const newScene: Scene = {
       id: `scene-${Date.now()}`,
       title: `Новая сцена ${scenes.length + 1}`,
       text: '',
       description: '',
+      narratorDescription: '',
       media: [],
       audioUrl: null,
       audioDuration: null,
@@ -489,7 +566,9 @@ export default function App() {
         },
         body: JSON.stringify({
           text: scene.text,
-          sceneId: sceneId
+          sceneId: sceneId,
+          voiceSettings: projectSettings.voiceSettings,
+          sceneNarratorDescription: scene.narratorDescription
         })
       })
 
@@ -708,10 +787,121 @@ export default function App() {
                   <CheckCircle2 className="h-3 w-3" />
                   <span>{completionStats.completed}/{completionStats.total} готово</span>
                 </div>
+                <span>•</span>
+                <div className="flex items-center gap-1">
+                  <Mic className="h-3 w-3" />
+                  <span>{getVoiceDisplayName(projectSettings.voiceSettings.voice)}</span>
+                </div>
               </div>
             </div>
           </div>
           <div className="flex gap-2">
+            {/* Settings Dialog */}
+            <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline">
+                  <Settings className="mr-2 h-4 w-4" />
+                  Настройки
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Настройки проекта</DialogTitle>
+                  <DialogDescription>
+                    Настройте параметры озвучки и другие опции проекта
+                  </DialogDescription>
+                </DialogHeader>
+                
+                <Tabs defaultValue="voice" className="w-full">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="voice">Озвучка</TabsTrigger>
+                    <TabsTrigger value="general">Общие</TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value="voice" className="space-y-6">
+                    <div className="space-y-4">
+                      <div>
+                        <Label>Голос диктора</Label>
+                        <Select 
+                          value={projectSettings.voiceSettings.voice} 
+                          onValueChange={(value: any) => updateVoiceSettings({ voice: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="alloy">Alloy (универсальный)</SelectItem>
+                            <SelectItem value="echo">Echo (мужской)</SelectItem>
+                            <SelectItem value="fable">Fable (британский)</SelectItem>
+                            <SelectItem value="onyx">Onyx (глубокий мужской)</SelectItem>
+                            <SelectItem value="nova">Nova (женский)</SelectItem>
+                            <SelectItem value="shimmer">Shimmer (женский, мягкий)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div>
+                        <Label>Пол диктора</Label>
+                        <Select 
+                          value={projectSettings.voiceSettings.gender} 
+                          onValueChange={(value: any) => updateVoiceSettings({ gender: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="male">Мужской</SelectItem>
+                            <SelectItem value="female">Женский</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div>
+                        <Label>Описание стиля диктора</Label>
+                        <Textarea
+                          placeholder="Например: Act as a warm female narrator, soft and supportive, slower pace"
+                          value={projectSettings.voiceSettings.narratorDescription}
+                          onChange={(e) => updateVoiceSettings({ narratorDescription: e.target.value })}
+                          rows={3}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Опишите характер, темп и стиль речи диктора на английском языке
+                        </p>
+                      </div>
+
+                      <div>
+                        <Label>Характер речи (Steerability)</Label>
+                        <Input
+                          placeholder="Например: доброжелательно, спокойно, как документальный рассказчик"
+                          value={projectSettings.voiceSettings.steerability}
+                          onChange={(e) => updateVoiceSettings({ steerability: e.target.value })}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Краткое описание тона и характера речи на русском языке
+                        </p>
+                      </div>
+
+                      <div className="p-4 bg-blue-50 rounded-lg">
+                        <h4 className="font-medium text-blue-900 mb-2">Примеры описаний:</h4>
+                        <div className="space-y-2 text-sm text-blue-800">
+                          <p><strong>Для презентации:</strong> "Speak as a confident male presenter, upbeat, medium pace, clear articulation"</p>
+                          <p><strong>Для документального фильма:</strong> "Act as a professional documentary narrator, authoritative yet warm, steady pace"</p>
+                          <p><strong>Для обучающего контента:</strong> "Speak as a friendly teacher, clear and encouraging, slightly slower pace"</p>
+                        </div>
+                      </div>
+                    </div>
+                  </TabsContent>
+                  
+                  <TabsContent value="general" className="space-y-6">
+                    <div className="text-center text-gray-500 py-8">
+                      <Settings className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                      <p>Дополнительные настройки будут добавлены в будущих версиях</p>
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              </DialogContent>
+            </Dialog>
+
             <Button onClick={saveProject} disabled={isLoading}>
               <Save className="mr-2 h-4 w-4" />
               Сохранить
@@ -753,6 +943,7 @@ export default function App() {
                 const hasImages = scene.media.some(m => m.type === 'image')
                 const hasVideos = scene.media.some(m => m.type === 'video')
                 const hasAudio = !!scene.audioUrl
+                const hasNarratorDescription = !!scene.narratorDescription.trim()
                 
                 return (
                   <div
@@ -817,6 +1008,13 @@ export default function App() {
                           <div className="flex items-center">
                             <Volume2 className={`h-3 w-3 ${hasAudio ? 'text-green-500' : 'text-gray-300'}`} />
                           </div>
+                          
+                          {/* Narrator Description Status */}
+                          {hasNarratorDescription && (
+                            <div className="flex items-center">
+                              <MessageSquare className="h-3 w-3 text-orange-500" />
+                            </div>
+                          )}
                           
                           {/* Image Status */}
                           {hasImages && (
@@ -997,6 +1195,26 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Narrator Description for Scene */}
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <MessageSquare className="h-4 w-4 text-orange-500" />
+                    <label className="text-sm font-medium">
+                      Описание диктора для этой сцены (опционально)
+                    </label>
+                  </div>
+                  <Textarea
+                    value={selectedScene.narratorDescription}
+                    onChange={(e) => updateSceneNarratorDescription(selectedScene.id, e.target.value)}
+                    rows={2}
+                    placeholder="Например: говорить быстрее и взволнованно, как будто что-то случилось"
+                    className="resize-none"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    💡 Если не указано, будут использованы глобальные настройки озвучки проекта
+                  </p>
+                </div>
+
                 {/* Video Speed Control Section */}
                 <div className="space-y-4">
                   <div className="border rounded-lg p-4 bg-gray-50">
@@ -1028,7 +1246,7 @@ export default function App() {
                       
                       <Slider
                         value={[selectedScene.speed]}
-                        onValueChange={(value: number[]) => updateSceneSpeed(selectedScene.id, value[0])}
+                        onValueChange={(value) => updateSceneSpeed(selectedScene.id, value[0])}
                         min={1}
                         max={10}
                         step={1}
@@ -1187,10 +1405,10 @@ export default function App() {
                   <p>• Перетащите сцены в списке для изменения порядка</p>
                   <p>• Зеленый цвет времени - реальная длительность озвучки</p>
                   <p>• Используйте чекбокс "Сцена готова" для отслеживания прогресса</p>
-                  <p>• Иконки показывают статус: 🎵 озвучка, 🖼 фото, 📹 видео, 📊 скорость</p>
+                  <p>• Иконки показывают статус: 🎵 озвучка, 💬 описание диктора, 🖼 фото, 📹 видео, 📊 скорость</p>
                   <p>• Настройте скорость видео для каждой сцены (0.5x - 2x)</p>
-                  <p>• Рекомендуемая скорость отображается когда доступна</p>
-                  <p>• Скорость видео влияет на итоговый ролик при экспорте</p>
+                  <p>• Используйте настройки проекта для глобальных параметров озвучки</p>
+                  <p>• Добавляйте индивидуальные описания диктора для отдельных сцен</p>
                   <p>• В одной сцене может быть только одно видео или несколько фото</p>
                   <p>• Поддерживаемые форматы: JPG, PNG, MP4, MOV, AVI</p>
                   <p>• Максимальный размер файла: 10МБ</p>
