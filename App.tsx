@@ -8,8 +8,9 @@ import { Badge } from './components/ui/badge'
 import { Separator } from './components/ui/separator'
 import { ScrollArea } from './components/ui/scroll-area'
 import { Checkbox } from './components/ui/checkbox'
+import { Slider } from './components/ui/slider'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './components/ui/alert-dialog'
-import { toast } from 'sonner@2.0.3'
+import { toast } from 'sonner'
 import { 
   PlayCircle, 
   Upload, 
@@ -30,7 +31,9 @@ import {
   GripVertical,
   Clock,
   CheckCircle2,
-  Circle
+  Circle,
+  Gauge,
+  TrendingUp
 } from 'lucide-react'
 import { projectId, publicAnonKey } from './utils/supabase/info'
 
@@ -43,6 +46,8 @@ interface Scene {
   audioUrl: string | null
   audioDuration: number | null // duration in seconds
   isCompleted: boolean
+  recommendedSpeed?: number // рекомендуемая скорость видео от системы (1-10)
+  speed: number // пользовательская скорость видео (1-10)
 }
 
 interface MediaFile {
@@ -147,6 +152,21 @@ export default function App() {
   const getCompletionStats = () => {
     const completed = scenes.filter(scene => scene.isCompleted).length
     return { completed, total: scenes.length }
+  }
+
+  // Get video speed label
+  const getVideoSpeedLabel = (speed: number): string => {
+    if (speed <= 2) return '0.5x скорость'
+    if (speed <= 4) return '0.8x скорость'
+    if (speed <= 6) return '1x скорость'
+    if (speed <= 8) return '1.5x скорость'
+    return '2x скорость'
+  }
+
+  // Get video speed multiplier
+  const getVideoSpeedMultiplier = (speed: number): number => {
+    // Convert speed 1-10 to multiplier 0.5x-2.0x
+    return 0.5 + (speed - 1) * (1.5 / 9)
   }
 
   const loadProjects = async () => {
@@ -276,8 +296,10 @@ export default function App() {
         setProjectTitle(project.title)
         setScenes(project.scenes.map((scene: Scene) => ({
           ...scene,
-          // Ensure backward compatibility for projects without isCompleted
-          isCompleted: scene.isCompleted ?? false
+          // Ensure backward compatibility for projects without isCompleted and speed
+          isCompleted: scene.isCompleted ?? false,
+          speed: scene.speed ?? 5, // default video speed is 5 (1x)
+          recommendedSpeed: scene.recommendedSpeed // keep as is, might be undefined
         })))
         setSelectedSceneId(project.scenes[0]?.id || null)
         setCurrentProjectId(project.id)
@@ -327,6 +349,12 @@ export default function App() {
     ))
   }
 
+  const updateSceneSpeed = (sceneId: string, newSpeed: number) => {
+    setScenes(prev => prev.map(scene => 
+      scene.id === sceneId ? { ...scene, speed: newSpeed } : scene
+    ))
+  }
+
   const toggleSceneCompleted = (sceneId: string) => {
     setScenes(prev => prev.map(scene => 
       scene.id === sceneId ? { ...scene, isCompleted: !scene.isCompleted } : scene
@@ -342,7 +370,8 @@ export default function App() {
       media: [],
       audioUrl: null,
       audioDuration: null,
-      isCompleted: false
+      isCompleted: false,
+      speed: 5 // default video speed (1x)
     }
     setScenes(prev => [...prev, newScene])
     setSelectedSceneId(newScene.id)
@@ -783,7 +812,7 @@ export default function App() {
                         </p>
                         
                         {/* Status Icons */}
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 mb-2">
                           {/* Audio Status */}
                           <div className="flex items-center">
                             <Volume2 className={`h-3 w-3 ${hasAudio ? 'text-green-500' : 'text-gray-300'}`} />
@@ -808,7 +837,23 @@ export default function App() {
                               </span>
                             </div>
                           )}
+
+                          {/* Video Speed Indicator */}
+                          <div className="flex items-center">
+                            <Gauge className="h-3 w-3 text-orange-500" />
+                            <span className="text-xs text-orange-600 ml-1">
+                              {getVideoSpeedMultiplier(scene.speed).toFixed(1)}x
+                            </span>
+                          </div>
                         </div>
+
+                        {/* Recommended Speed */}
+                        {scene.recommendedSpeed && (
+                          <div className="flex items-center gap-1 text-xs text-green-600">
+                            <TrendingUp className="h-3 w-3" />
+                            <span>Рекомендуется: {getVideoSpeedMultiplier(scene.recommendedSpeed).toFixed(1)}x</span>
+                          </div>
+                        )}
                       </div>
                       
                       {/* Delete Button */}
@@ -952,6 +997,57 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Video Speed Control Section */}
+                <div className="space-y-4">
+                  <div className="border rounded-lg p-4 bg-gray-50">
+                    <label className="block text-sm font-medium mb-3">
+                      Скорость видео
+                    </label>
+                    
+                    {/* Recommended Speed Display */}
+                    {selectedScene.recommendedSpeed && (
+                      <div className="flex items-center gap-2 mb-3 p-2 bg-green-100 rounded text-sm text-green-700">
+                        <TrendingUp className="h-4 w-4" />
+                        <span>
+                          Рекомендуемая скорость: {getVideoSpeedMultiplier(selectedScene.recommendedSpeed).toFixed(1)}x 
+                          ({getVideoSpeedLabel(selectedScene.recommendedSpeed)})
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Speed Slider */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-600">Текущая скорость видео:</span>
+                        <div className="flex items-center gap-2">
+                          <Gauge className="h-4 w-4 text-orange-500" />
+                          <span className="font-medium">{getVideoSpeedMultiplier(selectedScene.speed).toFixed(1)}x</span>
+                          <span className="text-sm text-gray-500">({getVideoSpeedLabel(selectedScene.speed)})</span>
+                        </div>
+                      </div>
+                      
+                      <Slider
+                        value={[selectedScene.speed]}
+                        onValueChange={(value: number[]) => updateSceneSpeed(selectedScene.id, value[0])}
+                        min={1}
+                        max={10}
+                        step={1}
+                        className="w-full"
+                      />
+                      
+                      <div className="flex justify-between text-xs text-gray-400">
+                        <span>1 - Замедленное (0.5x)</span>
+                        <span>5 - Нормальная (1x)</span>
+                        <span>10 - Ускоренное (2x)</span>
+                      </div>
+                      
+                      <p className="text-xs text-gray-500">
+                        💡 Эта настройка влияет на скорость воспроизведения видео в итоговом ролике
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 <div>
                   <div className="flex items-center justify-between mb-4">
                     <label className="block text-sm font-medium">
@@ -1091,11 +1187,13 @@ export default function App() {
                   <p>• Перетащите сцены в списке для изменения порядка</p>
                   <p>• Зеленый цвет времени - реальная длительность озвучки</p>
                   <p>• Используйте чекбокс "Сцена готова" для отслеживания прогресса</p>
-                  <p>• Иконки показывают статус: 🎵 озвучка, 🖼 фото, 📹 видео</p>
+                  <p>• Иконки показывают статус: 🎵 озвучка, 🖼 фото, 📹 видео, 📊 скорость</p>
+                  <p>• Настройте скорость видео для каждой сцены (0.5x - 2x)</p>
+                  <p>• Рекомендуемая скорость отображается когда доступна</p>
+                  <p>• Скорость видео влияет на итоговый ролик при экспорте</p>
                   <p>• В одной сцене может быть только одно видео или несколько фото</p>
                   <p>• Поддерживаемые форматы: JPG, PNG, MP4, MOV, AVI</p>
                   <p>• Максимальный размер файла: 10МБ</p>
-                  <p>• Файлы с любыми символами автоматически переименовываются</p>
                 </div>
               </div>
             ) : (

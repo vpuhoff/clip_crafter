@@ -232,7 +232,9 @@ function parseScenarioMock(text: string) {
         media: [],
         audioUrl: null,
         audioDuration: null,
-        isCompleted: false
+        isCompleted: false,
+        speed: 5, // default video speed (1x)
+        recommendedSpeed: Math.floor(Math.random() * 3) + 4 // random recommended video speed between 4-6 for demo
       })
     }
   }
