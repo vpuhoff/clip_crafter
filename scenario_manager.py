@@ -9,7 +9,11 @@ import uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Union
 from dataclasses import dataclass, asdict, field
-from supabase import create_client, Client
+try:
+    from supabase import create_client, Client  # type: ignore
+except Exception:  # pragma: no cover - среда без supabase
+    create_client = None  # type: ignore
+    Client = Any  # безопасная заглушка для подсветки типов
 
 
 @dataclass
@@ -214,7 +218,12 @@ class ScenarioManager:
             supabase_url: URL Supabase проекта
             supabase_key: Ключ доступа к Supabase (service_role или anon)
         """
-        self.supabase: Client = create_client(supabase_url, supabase_key)
+        if create_client is None:
+            raise ImportError(
+                "Модуль 'supabase' не установлен. Установите 'supabase' (pip install supabase) "
+                "или используйте функции экспорта/импорта без подключения к базе."
+            )
+        self.supabase: Client = create_client(supabase_url, supabase_key)  # type: ignore
         self.table_name = "kv_store_766e6542"
         self.project_prefix = "project:"
 
