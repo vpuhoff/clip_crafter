@@ -24,7 +24,7 @@ import sys
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Optional
 from uuid import uuid4
 
 # Импортируем модели из "данного модуля"
@@ -355,6 +355,12 @@ def main() -> None:
         help="После создания проекта сохранить его в базу через Supabase",
     )
     parser.add_argument(
+        "--dotenv-path",
+        type=str,
+        default=str(Path.cwd() / ".env"),
+        help="Путь к .env файлу для подстановки переменных окружения при их отсутствии",
+    )
+    parser.add_argument(
         "--supabase-url",
         type=str,
         default=None,
@@ -374,6 +380,63 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    # Если требуется пуш в базу, но переменные окружения не заданы — попробуем подгрузить из .env
+    if args.push_to_db:
+        def _read_env_file(path: Path) -> Dict[str, str]:
+            env: Dict[str, str] = {}
+            if not path.exists():
+                return env
+            for raw_line in path.read_text(encoding="utf-8").splitlines():
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("export "):
+                    line = line[len("export "):].strip()
+                if "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip("'\"")
+                if key and value:
+                    env[key] = value
+            return env
+
+        def _ensure_env(keys: List[str], dotenv_path: Optional[str]) -> None:
+            missing = [k for k in keys if not os.getenv(k)]
+            if not missing:
+                return
+            candidate_paths: List[Path] = []
+            if dotenv_path:
+                candidate_paths.append(Path(dotenv_path))
+            # Также попробуем соседний с проектом каталог, если отличается
+            try:
+                candidate_paths.append(Path.cwd() / ".env")
+            except Exception:
+                pass
+            # Уникализируем пути, сохраняя порядок
+            seen: set = set()
+            unique_paths: List[Path] = []
+            for p in candidate_paths:
+                if p not in seen:
+                    unique_paths.append(p)
+                    seen.add(p)
+
+            for p in unique_paths:
+                env_map = _read_env_file(p)
+                if not env_map:
+                    continue
+                for k in missing:
+                    if k in env_map and not os.getenv(k):
+                        os.environ[k] = env_map[k]
+
+        _ensure_env([
+            "VITE_SUPABASE_URL",
+            "VITE_SUPABASE_ANON_KEY",
+            "SUPABASE_URL",
+            "SUPABASE_SERVICE_ROLE_KEY",
+            "SUPABASE_ANON_KEY",
+        ], args.dotenv_path)
 
     ensure_tool_available("ffmpeg")
     ensure_tool_available("ffprobe")
