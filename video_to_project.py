@@ -22,6 +22,8 @@ import shutil
 import subprocess
 import sys
 from dataclasses import asdict
+import urllib.request
+import urllib.error
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional
@@ -294,22 +296,81 @@ def push_project_to_db(project: Project, supabase_url: str | None, supabase_key:
 
         from scenario_manager import ScenarioManager  # локальный импорт, чтобы не требовать supabase без надобности
 
-        if supabase_url and supabase_key:
+        if supabase_url and supabase_key and os.getenv("SUPABASE_SERVICE_ROLE_KEY"):
             manager = ScenarioManager(supabase_url, supabase_key)
         else:
-            # Фолбэк на фабрику из модуля (использует SUPABASE_* переменные)
-            manager = create_manager_from_env()
+            manager = None  # будем пробовать HTTP через Edge Function
     except Exception as e:
-        print(f"Не удалось инициализировать подключение к Supabase: {e}", file=sys.stderr)
-        return False
+        manager = None
 
+    # Попытка 1: если есть сервисный ключ и инициализировался manager — сохранить напрямую
+    if manager is not None:
+        try:
+            ok = manager.save_project(project)
+            if ok:
+                return True
+            print("Ошибка сохранения проекта в базу (прямая запись)", file=sys.stderr)
+        except Exception as e:
+            # Продолжим попытку через HTTP
+            print(f"Исключение при сохранении (прямая запись): {e}", file=sys.stderr)
+
+    # Попытка 2: сохранить через HTTP-функцию (использует анонимный ключ)
     try:
-        ok = manager.save_project(project)
-        if not ok:
-            print("Ошибка сохранения проекта в базу", file=sys.stderr)
-        return ok
+        if not supabase_url:
+            raise RuntimeError("SUPABASE_URL/VITE_SUPABASE_URL не задан")
+        if not supabase_key:
+            raise RuntimeError("VITE_SUPABASE_ANON_KEY/SUPABASE_ANON_KEY не задан")
+
+        base = supabase_url.rstrip('/')
+        save_url = f"{base}/functions/v1/make-server-766e6542/save-project"
+        payload = {
+            "projectId": project.id,
+            "title": project.title,
+            "scenes": [
+                {
+                    "id": s.id,
+                    "title": s.title,
+                    "text": s.text,
+                    "description": s.description,
+                    "narratorDescription": s.narratorDescription,
+                    "media": [asdict(m) for m in s.media],
+                    "audioUrl": s.audioUrl,
+                    "audioDuration": s.audioDuration,
+                    "isCompleted": s.isCompleted,
+                    "speed": s.speed,
+                    "recommendedSpeed": s.recommendedSpeed,
+                }
+                for s in project.scenes
+            ],
+            # settings отправим, сервер может проигнорировать
+            "settings": asdict(project.settings),
+        }
+        data = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(
+            url=save_url,
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {supabase_key}",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            resp_body = resp.read()
+            try:
+                resp_json = json.loads(resp_body.decode('utf-8'))
+            except Exception:
+                resp_json = {}
+            if isinstance(resp_json, dict) and resp_json.get("success"):
+                return True
+            print(f"HTTP сохранение вернуло неожиданный ответ: {resp_body[:500]!r}", file=sys.stderr)
+            return False
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', errors='ignore')
+        print(f"HTTP ошибка сохранения проекта: {e.code} {e.reason}\n{body}", file=sys.stderr)
+        return False
     except Exception as e:
-        print(f"Исключение при сохранении проекта: {e}", file=sys.stderr)
+        print(f"Исключение при HTTP сохранении проекта: {e}", file=sys.stderr)
         return False
 
 
