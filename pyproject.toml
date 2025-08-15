@@ -1,0 +1,22 @@
+[project]
+name = "clip-crafter"
+version = "0.1.0"
+description = "Video scene cutter and scenario project tools"
+readme = "README.md"
+requires-python = ">=3.10"
+# Base dependencies kept minimal; stdlib + external ffmpeg/ffprobe
+# Install optional extras via: uv sync --extra db
+
+[project.optional-dependencies]
+# Extras group for DB integration (Supabase)
+# Use: uv sync --extra db
+# Import name is 'supabase'
+db = [
+  "supabase"
+]
+
+[tool.uv]
+# Create in-project virtualenv at .venv
+index-strategy = "unsafe-first-match"
+no-sources = true
+no-build = true

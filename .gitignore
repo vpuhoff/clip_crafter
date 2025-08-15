@@ -50,3 +50,13 @@ coverage/
 
 # OS
 Thumbs.db
+
+# Media files
+*.mp4
+
+# Python files
+*.pyc
+.venv/
+
+# Project specific temporary files
+my_project/*
