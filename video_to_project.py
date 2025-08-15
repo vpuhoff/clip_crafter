@@ -282,11 +282,22 @@ def push_project_to_db(project: Project, supabase_url: str | None, supabase_key:
     """Сохраняет проект в KV-хранилище через ScenarioManager."""
     # Инициализация менеджера: явные аргументы имеют приоритет, иначе берем из окружения
     try:
-        if supabase_url and supabase_key:
-            from scenario_manager import ScenarioManager  # локальный импорт, чтобы не требовать supabase без надобности
+        # Приоритет: явные аргументы -> VITE_* -> SUPABASE_*
+        if not supabase_url:
+            supabase_url = os.getenv("VITE_SUPABASE_URL") or os.getenv("SUPABASE_URL")
+        if not supabase_key:
+            supabase_key = (
+                os.getenv("VITE_SUPABASE_ANON_KEY")
+                or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+                or os.getenv("SUPABASE_ANON_KEY")
+            )
 
+        from scenario_manager import ScenarioManager  # локальный импорт, чтобы не требовать supabase без надобности
+
+        if supabase_url and supabase_key:
             manager = ScenarioManager(supabase_url, supabase_key)
         else:
+            # Фолбэк на фабрику из модуля (использует SUPABASE_* переменные)
             manager = create_manager_from_env()
     except Exception as e:
         print(f"Не удалось инициализировать подключение к Supabase: {e}", file=sys.stderr)
@@ -347,14 +358,18 @@ def main() -> None:
         "--supabase-url",
         type=str,
         default=None,
-        help="Необязательный URL Supabase (если не указан — берется из переменной окружения SUPABASE_URL)",
+        help=(
+            "Необязательный URL Supabase. Если не указан — берется из VITE_SUPABASE_URL, "
+            "иначе из SUPABASE_URL"
+        ),
     )
     parser.add_argument(
         "--supabase-key",
         type=str,
         default=None,
         help=(
-            "Необязательный ключ Supabase (если не указан — берется из SUPABASE_SERVICE_ROLE_KEY или SUPABASE_ANON_KEY)"
+            "Необязательный ключ Supabase. Если не указан — берется из VITE_SUPABASE_ANON_KEY, "
+            "иначе из SUPABASE_SERVICE_ROLE_KEY или SUPABASE_ANON_KEY"
         ),
     )
 
