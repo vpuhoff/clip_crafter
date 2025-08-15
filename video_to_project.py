@@ -28,7 +28,13 @@ from typing import List, Tuple
 from uuid import uuid4
 
 # Импортируем модели из "данного модуля"
-from scenario_manager import Project, Scene, MediaFile, ProjectSettings
+from scenario_manager import (
+    Project,
+    Scene,
+    MediaFile,
+    ProjectSettings,
+    create_manager_from_env,
+)
 
 
 def ensure_tool_available(tool_name: str) -> None:
@@ -272,6 +278,30 @@ def export_project_to_file(project: Project, output_file: Path) -> None:
         json.dump(export_data, f, ensure_ascii=False, indent=2)
 
 
+def push_project_to_db(project: Project, supabase_url: str | None, supabase_key: str | None) -> bool:
+    """Сохраняет проект в KV-хранилище через ScenarioManager."""
+    # Инициализация менеджера: явные аргументы имеют приоритет, иначе берем из окружения
+    try:
+        if supabase_url and supabase_key:
+            from scenario_manager import ScenarioManager  # локальный импорт, чтобы не требовать supabase без надобности
+
+            manager = ScenarioManager(supabase_url, supabase_key)
+        else:
+            manager = create_manager_from_env()
+    except Exception as e:
+        print(f"Не удалось инициализировать подключение к Supabase: {e}", file=sys.stderr)
+        return False
+
+    try:
+        ok = manager.save_project(project)
+        if not ok:
+            print("Ошибка сохранения проекта в базу", file=sys.stderr)
+        return ok
+    except Exception as e:
+        print(f"Исключение при сохранении проекта: {e}", file=sys.stderr)
+        return False
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Нарезка видео на сцены и создание проекта")
     parser.add_argument(
@@ -307,6 +337,25 @@ def main() -> None:
         type=str,
         default=None,
         help="Файл для сохранения проекта (JSON). По умолчанию <project-dir>/project.json",
+    )
+    parser.add_argument(
+        "--push-to-db",
+        action="store_true",
+        help="После создания проекта сохранить его в базу через Supabase",
+    )
+    parser.add_argument(
+        "--supabase-url",
+        type=str,
+        default=None,
+        help="Необязательный URL Supabase (если не указан — берется из переменной окружения SUPABASE_URL)",
+    )
+    parser.add_argument(
+        "--supabase-key",
+        type=str,
+        default=None,
+        help=(
+            "Необязательный ключ Supabase (если не указан — берется из SUPABASE_SERVICE_ROLE_KEY или SUPABASE_ANON_KEY)"
+        ),
     )
 
     args = parser.parse_args()
@@ -370,6 +419,13 @@ def main() -> None:
     except Exception as e:
         print(f"Ошибка сохранения проекта: {e}", file=sys.stderr)
         sys.exit(3)
+
+    if args.push_to_db:
+        pushed = push_project_to_db(project, args.supabase_url, args.supabase_key)
+        if pushed:
+            print("Проект сохранен в базу данных Supabase.")
+        else:
+            print("Проект не удалось сохранить в базу данных Supabase.", file=sys.stderr)
 
     print("")
     print(f"Проект: {project.title}")
