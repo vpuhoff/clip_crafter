@@ -1,0 +1,35 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Vite: React App",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://localhost:9780",
+      "envFile": "${workspaceFolder}/.env",
+      "webRoot": "${workspaceFolder}",
+      "preLaunchTask": "npm: dev"
+    },
+    {
+      "name": "Python: video_to_project",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/video_to_project.py",
+      "preLaunchTask": "uv: sync",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "args": [
+        "--project-title", "Мой проект",
+        "--project-dir", "${workspaceFolder}/my_project",
+        "--min-segment", "5",
+        "--scene-threshold", "0.03",
+        "${workspaceFolder}/example_video.mp4",
+        "--push-to-db"
+      ],
+      "justMyCode": true,
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  ]
+}
